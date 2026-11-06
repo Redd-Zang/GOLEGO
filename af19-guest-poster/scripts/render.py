@@ -1,4 +1,4 @@
-"""Export the AF19 commemorative scene as a full-bleed portrait PNG."""
+"""Export the AF19 commemorative scene as a 6-inch portrait PNG at 300 DPI."""
 import argparse
 from pathlib import Path
 
@@ -11,26 +11,14 @@ args = parser.parse_args()
 with Image.open(args.scene) as source:
     source = ImageOps.exif_transpose(source)
     ratio = source.width / source.height
-    target = (1080, 1920)
-    if abs(ratio - 9 / 16) <= 0.03:
-        canvas = ImageOps.fit(source.convert("RGB"), target, Image.Resampling.LANCZOS)
-    elif 9 / 16 < ratio <= 0.70:
-        # Wider portraits can place a guest or monument right against either edge.
-        # Extend only the ceiling and floor to preserve the full group at its original proportions.
-        frame = ImageOps.contain(source.convert("RGB"), target, Image.Resampling.LANCZOS)
-        canvas = Image.new("RGB", target)
-        top = (canvas.height - frame.height) // 2
-        bottom = canvas.height - frame.height - top
-        canvas.paste(ImageOps.flip(frame.crop((0, 0, frame.width, top))), (0, 0))
-        canvas.paste(frame, (0, top))
-        canvas.paste(ImageOps.flip(frame.crop((0, frame.height-bottom, frame.width, frame.height))),
-                     (0, top + frame.height))
-    else:
-        parser.error("Scene must be composed for a portrait poster")
+    target = (1200, 1800)
+    if abs(ratio - 2 / 3) > 0.002:
+        parser.error("Scene must be 2:3; outpaint the full scene before export (no padding or cropping)")
+    canvas = source.convert("RGB").resize(target, Image.Resampling.LANCZOS)
 
 with args.poster.open("xb") as output:
     try:
-        canvas.save(output, format="PNG")
+        canvas.save(output, format="PNG", dpi=(300, 300))
     except BaseException:
         args.poster.unlink(missing_ok=True)
         raise

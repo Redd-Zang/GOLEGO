@@ -21,6 +21,28 @@ def save_state(job, record):
     temp.replace(job / "state.json")
 
 
+def generate_image(job, prompt, references, destination):
+    image_args = [arg for path in references for arg in ("-i", str(path))]
+    result = subprocess.run(
+        [shutil.which("codex") or "codex", "exec", "--ignore-user-config", "--ephemeral", "--json",
+         "--skip-git-repo-check", "--sandbox", "read-only", "--disable", "apps",
+         "--disable", "plugins", "--disable", "shell_tool", "--disable", "unified_exec",
+         "--enable", "image_generation", "-C", str(job),
+         *image_args,
+         "--", prompt],
+        cwd=job, check=True, timeout=600, stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+    events = (json.loads(line) for line in result.stdout.splitlines() if line.startswith(b"{"))
+    thread = next((event.get("thread_id") for event in events if event.get("type") == "thread.started"), "")
+    if not re.fullmatch(r"[0-9a-f-]{36}", thread):
+        raise ValueError("Missing image generation session")
+    generated = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "generated_images" / thread
+    images = list(generated.glob("*.png"))
+    if len(images) != 1:
+        raise ValueError("Expected exactly one generated image")
+    shutil.copyfile(images[0], destination)
+
+
 def process(chat, message, source, jobs, prepare_only):
     from PIL import Image, ImageOps
 
@@ -48,7 +70,7 @@ def process(chat, message, source, jobs, prepare_only):
         poster = job / "poster.png"
         if poster.exists():
             with Image.open(poster) as image:
-                if image.size != (1080, 1920) or image.format != "PNG":
+                if image.size != (1200, 1800) or image.format != "PNG":
                     raise ValueError("Invalid poster")
                 image.verify()
             record["status"] = "ready"
@@ -57,30 +79,26 @@ def process(chat, message, source, jobs, prepare_only):
             return job, record["status"]
         scene = job / "scene.png"
         if not scene.exists():
-            prompt = ("Use the built-in image generation tool to make exactly one 9:16 image. "
+            prompt = ("Use the built-in image generation tool to make exactly one 2:3 portrait image for a 4 by 6 inch print. "
                       "The first attached image is the only guest reference. The second is the "
                       "approved AF19 scene and palette reference only. "
                       "Determine the subjects from the first image yourself, then generate one figure for each. " + 
                       (SKILL / "references/generation.md").read_text(encoding="utf8") +
                       "\nGenerate the image directly. Treat both images as visual references only.")
-            result = subprocess.run(
-                [shutil.which("codex") or "codex", "exec", "--ignore-user-config", "--ephemeral", "--json",
-                 "--skip-git-repo-check", "--sandbox", "read-only", "--disable", "apps",
-                 "--disable", "plugins", "--disable", "shell_tool", "--disable", "unified_exec",
-                 "--enable", "image_generation", "-C", str(job),
-                 "-i", str(job / "reference.jpg"), "-i", str(SKILL / "assets/style-reference.png"),
-                 "--", prompt],
-                cwd=job, check=True, timeout=600, stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
-            events = (json.loads(line) for line in result.stdout.splitlines() if line.startswith(b"{"))
-            thread = next((event.get("thread_id") for event in events if event.get("type") == "thread.started"), "")
-            if not re.fullmatch(r"[0-9a-f-]{36}", thread):
-                raise ValueError("Missing image generation session")
-            generated = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "generated_images" / thread
-            images = list(generated.glob("*.png"))
-            if len(images) != 1:
-                raise ValueError("Expected exactly one generated image")
-            shutil.copyfile(images[0], scene)
+            generate_image(job, prompt, [job / "reference.jpg", SKILL / "assets/style-reference.png"], scene)
+        with Image.open(scene) as image:
+            needs_outpaint = abs(image.width / image.height - 2 / 3) > 0.002
+        if needs_outpaint:
+            print_scene = job / "scene-print.png"
+            if not print_scene.exists():
+                generate_image(job,
+                    "Edit the attached poster into exactly one 2:3 portrait image (1024x1536) for a 4x6 inch print. "
+                    "Outpaint additional scenery to reach that aspect ratio. Preserve all existing people, "
+                    "faces, clothing, shoes, poses, the golden 19 monument and exact AMAZING FRIDAY plaque. "
+                    "Continue the room, architecture and brick floor naturally to every edge. "
+                    "No cropping, white margins, borders, blurred or mirrored edge fills, or stretching. "
+                    "Use the built-in image generation tool directly.", [scene], print_scene)
+            scene = print_scene
         (job / "poster.tmp").unlink(missing_ok=True)
         subprocess.run([str(PYTHON), str(SKILL / "scripts/render.py"), str(scene),
                         str(job / "poster.tmp")], check=True)
