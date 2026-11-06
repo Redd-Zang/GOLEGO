@@ -1,0 +1,19 @@
+# Local runtime and private guest content
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+.env
+.env.*
+!.env.example
+af19-data/
+data/
+jobs/
+inputs/
+outputs/
+logs/
+*.log
+*.lock
+*.pem
+*.key

@@ -1,0 +1,4 @@
+Pillow==13.0.0
+filelock==4.2.9
+pillow-heif==1.8.1
+reportlab==5.1.0

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#fff5e8"><title>乐高照相馆 · Amazing Friday 19周年</title><link rel="stylesheet" href="/studio.css"></head>
+<body><main><header><span class="brand"><i class="mark" aria-hidden="true"></i>AMAZING<br>FRIDAY</span><span>19周年</span></header>
+<section class="intro"><h1 id="title">乐高照相馆</h1><p id="subtitle">上传照片，制作你的专属周年纪念海报。</p></section>
+<section id="form"><img class="art" src="/studio.jpg" width="1200" height="800" style="height:auto" alt="积木摄影师举着照片，站在金色 19 纪念碑旁"><div class="controls"><label class="pick">
+<svg aria-hidden="true" width="30" height="27" viewBox="0 0 30 27" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="26" height="22" rx="3"/><circle cx="21" cy="8" r="2"/><path d="m3 20 8-9 6 7 4-4 7 7"/></svg>
+<strong id="filename">选择一张照片</strong><span class="format">JPG、PNG、HEIC · 最大 12 MB</span><input aria-label="选择一张单人照或合影" id="photo" type="file" accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"></label>
+<button class="brickbtn" id="send" disabled>生成我的海报</button><p class="tips" style="margin:14px 0 0">上传即表示您同意使用该照片进行 AI 海报制作。</p></div></section>
+<section id="wait" hidden><svg class="art" viewBox="0 0 400 292" role="img" aria-label="正在组装的纪念照相机"><defs>
+<image id="camera" href="/studio-camera.jpg" width="400" height="292" preserveAspectRatio="none"/>
+<path id="y" d="M107 37 115 31 115 22 131 17 135 21 142 19 142 12 160 7 166 13 178 16 185 42 115 67Z"/>
+<path id="r" d="m211 58 7-26 13 0 4-9 16 4 2 7 8 2 2-6 17 6 0 7 11 5-10 35z"/>
+<clipPath id="cy"><use href="#y"/></clipPath><clipPath id="cr"><use href="#r"/></clipPath><mask id="clean"><rect width="400" height="292" fill="white"/><use href="#y"/><use href="#r"/></mask></defs>
+<svg width="400" height="90" viewBox="3 0 95 90" preserveAspectRatio="none"><use href="#camera"/></svg><use href="#camera" mask="url(#clean)"/><g class="yellow"><use href="#camera" clip-path="url(#cy)"/></g><g class="red"><use href="#camera" clip-path="url(#cr)"/></g><g id="print" hidden><g class="paper"><path d="m155 209 102 0 19 59-100 7z" fill="#fff5e8" stroke="#e1caa8"/><image id="miniPrint" transform="matrix(1,-.055,.32,1,158,213)" width="92" height="50" preserveAspectRatio="xMidYMid slice"/></g></g></svg>
+<ol class="track" aria-label="制作状态"><li class="on">已收图</li><li id="making">制作中</li><li>可领取</li></ol><p class="tips">每人限一张，等待约5min，可稍后回来领取。</p></section>
+<div id="result" hidden><img id="poster" alt="你的 AF19 周年纪念海报"></div><p id="feedback" role="status" aria-live="polite"></p></main>
+<script>
+const form=document.querySelector('#form'), statusBox=document.querySelector('#feedback'), poster=document.querySelector('#poster'), send=document.querySelector('#send');
+const waitPanel = document.querySelector('#wait');
+const result = document.querySelector('#result');
+const photo = document.querySelector('#photo');
+photo.onchange = () => {
+  document.querySelector('#filename').textContent = photo.files[0]?.name || '选择一张照片';
+  statusBox.textContent = '';
+};
+function show(state, title, subtitle) {
+  document.body.dataset.state = state;
+  document.querySelector('#title').textContent = title;
+  document.querySelector('#subtitle').textContent = subtitle;
+}
+async function displayPoster() {
+  const wasWaiting = !waitPanel.hidden;
+  if (!poster.src) poster.src = '/poster';
+  await poster.decode();
+  if (wasWaiting && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.querySelector('#miniPrint').setAttribute('href', '/poster');
+    document.querySelector('#print').removeAttribute('hidden');
+    await new Promise(resolve => setTimeout(resolve, 750));
+  }
+  waitPanel.hidden = true;
+  result.hidden = false;
+  show('ready', '你的海报做好了', '长按下方海报，保存你的周年纪念照。');
+}
+async function check(expectReceipt = false) {
+  try {
+    const response = await fetch('/status', {cache: 'no-store'});
+    if (!response.ok) throw Error();
+    const {state} = await response.json();
+    if (state === 'new') {
+      send.disabled = photo.disabled = expectReceipt;
+      if (!expectReceipt && statusBox.textContent.startsWith('正在重新连接')) statusBox.textContent = '';
+      if (expectReceipt) statusBox.textContent = '无法确认领取会话，请保留页面并联系现场工作人员。';
+      return;
+    }
+    form.hidden = true;
+    if (state === 'ready') {
+      statusBox.textContent = '';
+      await displayPoster();
+    } else if (state === 'failed') {
+      waitPanel.hidden = true;
+      show('failed', '制作遇到了问题', '请让现场工作人员协助。');
+      statusBox.textContent = '';
+    } else {
+      const working = state === 'working';
+      show(state, working ? '正在制作你的海报' : '照片已进入队列',
+           working ? '照片已收到，做好后会自动显示。' : '有空位后会自动开始制作。');
+      document.querySelector('#making').classList.toggle('on', working);
+      waitPanel.hidden = false;
+      statusBox.textContent = '';
+      setTimeout(() => check(true), 3500);
+    }
+  } catch {
+    statusBox.textContent = '正在重新连接，请保持网络畅通。';
+    setTimeout(() => check(expectReceipt), 5000);
+  }
+}
+send.onclick = () => {
+  const file = document.querySelector('#photo').files[0];
+  if (!file || file.size > 12 * 1024 * 1024) {
+    statusBox.textContent = '请选择一张 12 MB 以内的照片。';
+    return;
+  }
+  send.disabled = photo.disabled = true;
+  const req = new XMLHttpRequest();
+  req.open('POST', '/upload');
+  req.setRequestHeader('X-AF19', 'upload');
+  req.timeout = 180000;
+  statusBox.textContent = '正在上传照片…';
+  req.upload.onprogress = e => {
+    if (e.lengthComputable) statusBox.textContent = '正在上传照片 ' + Math.floor(100 * e.loaded / e.total) + '%';
+  };
+  req.upload.onload = () => { statusBox.textContent = '照片已发出，正在等待服务器确认…'; };
+  req.onload = () => {
+    if (req.status >= 200 && req.status < 300) { check(true); return; }
+    statusBox.textContent = req.status >= 500 ? '服务暂时无法响应，请稍后重试。' : req.responseText || '上传失败，请重新选择照片。';
+    send.disabled = photo.disabled = false;
+  };
+  req.onerror = req.ontimeout = () => {
+    statusBox.textContent = '上传连接中断，请刷新本页查看是否收到。';
+    check();
+  };
+  req.send(file);
+};
+// Establish one receipt cookie before enabling uploads in newly opened tabs.
+if (navigator.locks) {
+  navigator.locks.request('af19-browser-session', () => check());
+} else {
+  check();
+}
+</script></html>

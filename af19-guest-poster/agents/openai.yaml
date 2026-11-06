@@ -1,0 +1,4 @@
+interface:
+  display_name: "AF19 来宾积木海报"
+  short_description: "将单人照或多人合影制成 Amazing Friday 19 周年庆积木人物海报"
+  default_prompt: "使用 $af19-guest-poster 将这张来宾照片制作成周年纪念海报，自动按原照主体人数入镜。"
